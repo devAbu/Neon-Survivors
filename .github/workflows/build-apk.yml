@@ -1,0 +1,65 @@
+name: Build APK
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Logic sanity check (headless balance sim)
+        run: node tools/sim.js 2
+
+      - name: Smoke test (UI + render code paths with a stub canvas)
+        run: node tools/smoke.js
+
+      - name: Generate Android project
+        run: npx cap add android
+
+      - name: Lock portrait orientation
+        run: sed -i 's|\(android:name="[^"]*MainActivity"\)|\1 android:screenOrientation="portrait"|' android/app/src/main/AndroidManifest.xml
+
+      - name: Allow vibration
+        run: sed -i 's|</manifest>|    <uses-permission android:name="android.permission.VIBRATE" />\n</manifest>|' android/app/src/main/AndroidManifest.xml
+
+      - name: Sync web assets
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon -I ../android-signing.gradle
+
+      - name: Prepare APK and verify signing key
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk neon-survivors.apk
+          want=$(keytool -list -keystore keystore/debug.keystore -storepass android | grep -i 'fingerprint' | awk '{print $NF}')
+          got=$(keytool -printcert -jarfile neon-survivors.apk | grep 'SHA256:' | head -1 | awk '{print $NF}')
+          echo "keystore: $want"; echo "apk:      $got"
+          test "$want" = "$got"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neon-survivors-apk
+          path: neon-survivors.apk

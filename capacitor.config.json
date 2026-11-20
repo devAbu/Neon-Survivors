@@ -1,0 +1,9 @@
+{
+  "appId": "com.devabu.neonsurvivors",
+  "appName": "Neon Survivors",
+  "webDir": "www",
+  "backgroundColor": "#07070f",
+  "android": {
+    "allowMixedContent": false
+  }
+}
